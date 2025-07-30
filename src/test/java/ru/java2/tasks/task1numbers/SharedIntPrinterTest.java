@@ -1,21 +1,28 @@
 package ru.java2.tasks.task1numbers;
 
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.RepetitionInfo;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SharedIntPrinterTest {
 
-    @Test
-    void testEvenOddPrinting() throws InterruptedException {
+    @RepeatedTest(value = 100, name = "{displayName} - повтор {currentRepetition}/{totalRepetitions}")
+    void testEvenOddPrinting(RepetitionInfo repetitionInfo) throws InterruptedException {
+        System.out.println("Запуск №" + repetitionInfo.getCurrentRepetition());
         int initial = 0;
         int max = 10;
 
@@ -43,10 +50,29 @@ public class SharedIntPrinterTest {
                 .allMatch(i -> output.toString().contains(String.valueOf(i)));
 
         assertTrue(containsAll, "Output should contain all numbers from " + initial + " to " + (max - 1));
+
+        String outputString = output.toString();
+        Map<String, Predicate<Integer>> predicates = Map.of("Even", isEven, "Odd", isOdd);
+
+        Map<String, List<Integer>> results = parseOutput(outputString, predicates);
+
+        List<Integer> evenNumbersFromOutput = results.get("Even");
+        List<Integer> oddNumbersFromOutput = results.get("Odd");
+
+        assertEquals(6, evenNumbersFromOutput.size(), "Expected even number list size: 6, actual: " + evenNumbersFromOutput.size());
+        assertEquals(5, oddNumbersFromOutput.size(), "Expected odd number list size: 5, actual: " + oddNumbersFromOutput.size());
+
+        assertTrue(evenNumbersFromOutput.stream().allMatch(isEven),
+                "All numbers printed by Even thread should be even");
+
+        assertTrue(oddNumbersFromOutput.stream().allMatch(isOdd),
+                "All numbers printed by Odd thread should be odd");
     }
 
-    @Test
-    void testMultiplesPrinting() throws InterruptedException {
+
+    @RepeatedTest(value = 100, name = "{displayName} - повтор {currentRepetition}/{totalRepetitions}")
+    void testMultiplesPrinting(RepetitionInfo repetitionInfo) throws InterruptedException {
+        System.out.println("Запуск №" + repetitionInfo.getCurrentRepetition());
         int initial = 0;
         int max = 30;
 
@@ -57,12 +83,12 @@ public class SharedIntPrinterTest {
 
         SharedIntPrinter printer = new SharedIntPrinter(lock, condition, printStream, initial);
 
-        Predicate<Integer> isMultipleOf3 = i -> i % 3 == 0;
-        Predicate<Integer> isMultipleOf5 = i -> i % 5 == 0;
+        Predicate<Integer> isMultipleOf3NotMultipleOf5 = i -> i % 3 == 0;
+        Predicate<Integer> isMultipleOf5NotMultipleOf3 = i -> i % 5 == 0;
         Predicate<Integer> isNotMultipleOf3And5 = i -> i % 3 != 0 && i % 5 != 0;
 
-        Thread multiple3 = new Thread(new Tasks.PrintIntTask(printer, isMultipleOf3, max));
-        Thread multiple5 = new Thread(new Tasks.PrintIntTask(printer, isMultipleOf5, max));
+        Thread multiple3 = new Thread(new Tasks.PrintIntTask(printer, isMultipleOf3NotMultipleOf5, max));
+        Thread multiple5 = new Thread(new Tasks.PrintIntTask(printer, isMultipleOf5NotMultipleOf3, max));
         Thread neither = new Thread(new Tasks.PrintIntTask(printer, isNotMultipleOf3And5, max));
 
         multiple3.setName("MultipleOf3");
@@ -83,5 +109,38 @@ public class SharedIntPrinterTest {
                 .allMatch(i -> outStr.contains(String.valueOf(i)));
 
         assertTrue(containsAll, "Output should contain all numbers from " + initial + " to " + (max - 1));
+
+        String outputString = output.toString();
+        Map<String, Predicate<Integer>> predicates = Map.of("MultipleOf3", isMultipleOf3NotMultipleOf5, "MultipleOf5", isMultipleOf5NotMultipleOf3,
+                "NotMultipleOf3And5", isNotMultipleOf3And5);
+
+        Map<String, List<Integer>> results = parseOutput(outputString, predicates);
+
+        results.forEach((threadName, numbers) -> {
+            Predicate<Integer> predicate = predicates.get(threadName);
+            assertTrue(numbers.stream().allMatch(predicate),
+                    () -> "All numbers from " + threadName + " should match its predicate");
+        });
     }
+
+    private Map<String, List<Integer>> parseOutput(String outputString, Map<String, Predicate<Integer>> predicates) {
+        String[] outputLines = outputString.split("\n");
+
+        Map<String, List<Integer>> result = new HashMap<>();
+
+        for (String line : outputLines) {
+            if (line.trim().isEmpty()) continue;
+            String[] parts = line.split(": ");
+            String name = parts[0];
+            int number = Integer.parseInt(parts[1].trim());
+
+            Predicate<Integer> predicate = predicates.get(name);
+            if (predicate.test(number)) {
+                result.computeIfAbsent(name, k -> new ArrayList<>()).add(number);
+            }
+        }
+
+        return result;
+    }
+
 }

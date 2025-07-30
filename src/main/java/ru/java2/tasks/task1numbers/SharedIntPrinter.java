@@ -46,16 +46,15 @@ public final class SharedIntPrinter {
                     break;
                 }
 
-                while (!printRule.test(number)) {
-                    if (number > max) {
-                        condition.signalAll();
-                        return;
-                    }
+                if (printRule.test(number)) {
+                    out.printf("%s: %d%n%n", Thread.currentThread().getName(), number++);
+                    condition.signalAll();
+                }
+
+                if (!printRule.test(number)) {
                     condition.await();
                 }
 
-                out.printf("%s: %d%n%n", Thread.currentThread().getName(), number++);
-                condition.signalAll();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("{} was interrupted. Message: {}", Thread.currentThread().getName(), e.getMessage());
